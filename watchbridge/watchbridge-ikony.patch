@@ -1,0 +1,311 @@
+diff --git a/README.md b/README.md
+index 19b273a..59ae24c 100644
+--- a/README.md
++++ b/README.md
+@@ -76,3 +76,25 @@ adb logcat -s WatchBridge
+ - Przy „Odbierz” rozmowa i tak idzie przez iPhone'a, bo zegarek nie ma profilu HFP do iOS.
+ - W trybie oszczędzania energii OnePlusa (sam RTOS) Wear OS śpi, więc powiadomień nie będzie.
+ - Stare powiadomienia, które były już na iPhonie w chwili połączenia, są pomijane.
++
++## Ikony aplikacji
++
++ANCS nie przesyła obrazków, więc ikony siedzą w samej aplikacji na zegarku. Domyślnie każda
++aplikacja z iPhone'a dostaje kolorowe kółko z symbolem kategorii (czat, telefon, mail, kalendarz, dzwonek).
++
++Własną ikonę dodasz tak: wrzuć PNG (np. 128×128) do `app/src/main/res/drawable/` pod nazwą
++`app_` + bundle ID z małych liter, a kropki zamień na `_`:
++
++| Aplikacja | Nazwa pliku |
++|---|---|
++| WhatsApp | `app_net_whatsapp_whatsapp.png` |
++| WhatsApp Business | `app_net_whatsapp_whatsappsmb.png` |
++| Wiadomości (SMS) | `app_com_apple_mobilesms.png` |
++| Telefon | `app_com_apple_mobilephone.png` |
++| Messenger | `app_com_facebook_messenger.png` |
++| Telegram | `app_ph_telegra_telegraph.png` |
++| Signal | `app_org_whispersystems_signal.png` |
++| Gmail | `app_com_google_gmail.png` |
++
++Bundle ID innych aplikacji znajdziesz w logu: `adb logcat -s WatchBridge`.
++Po dodaniu pliku: commit → push → nowe APK z Actions → `adb install -r`.
+diff --git a/app/build.gradle.kts b/app/build.gradle.kts
+index 0650a17..887484e 100644
+--- a/app/build.gradle.kts
++++ b/app/build.gradle.kts
+@@ -11,8 +11,8 @@ android {
+         applicationId = "pl.etoo.watchbridge"
+         minSdk = 33          // Wear OS 4+ (OnePlus Watch 4 ma Wear OS 6)
+         targetSdk = 35
+-        versionCode = 1
+-        versionName = "0.1"
++        versionCode = 2
++        versionName = "0.2"
+     }
+ 
+     buildTypes {
+diff --git a/app/src/main/java/pl/etoo/watchbridge/AppIcons.kt b/app/src/main/java/pl/etoo/watchbridge/AppIcons.kt
+new file mode 100644
+index 0000000..897ab12
+--- /dev/null
++++ b/app/src/main/java/pl/etoo/watchbridge/AppIcons.kt
+@@ -0,0 +1,103 @@
++package pl.etoo.watchbridge
++
++import android.annotation.SuppressLint
++import android.content.Context
++import android.graphics.Bitmap
++import android.graphics.Canvas
++import android.graphics.Color
++import android.graphics.Paint
++import android.graphics.Path
++import android.graphics.drawable.Icon
++
++/**
++ * Ikony aplikacji z iPhone'a. ANCS nie przesyła obrazków, więc:
++ *  1. jeśli w res/drawable jest plik "app_<bundle id>" (np. app_net_whatsapp_whatsapp.png) – używamy go,
++ *  2. w przeciwnym razie rysujemy kolorowe kółko z symbolem kategorii (czat, telefon, mail…).
++ */
++object AppIcons {
++    private const val SIZE = 128
++
++    private val COLORS = mapOf(
++        "net.whatsapp.WhatsApp" to 0xFF25D366.toInt(),
++        "net.whatsapp.WhatsAppSMB" to 0xFF25D366.toInt(),
++        "com.apple.MobileSMS" to 0xFF34C759.toInt(),
++        "com.apple.mobilephone" to 0xFF34C759.toInt(),
++        "com.apple.facetime" to 0xFF34C759.toInt(),
++        "com.apple.mobilemail" to 0xFF1E88E5.toInt(),
++        "com.apple.mobilecal" to 0xFFE53935.toInt(),
++        "com.apple.reminders" to 0xFFFB8C00.toInt(),
++        "com.facebook.Messenger" to 0xFF0A7CFF.toInt(),
++        "ph.telegra.Telegraph" to 0xFF29A9EB.toInt(),
++        "org.whispersystems.signal" to 0xFF3A76F0.toInt(),
++        "com.google.Gmail" to 0xFFD93025.toInt(),
++        "com.microsoft.skype.teams" to 0xFF5B5FC7.toInt(),
++    )
++
++    private val PALETTE = intArrayOf(
++        0xFF5C6BC0.toInt(), 0xFF26A69A.toInt(), 0xFFEF6C00.toInt(),
++        0xFF8E24AA.toInt(), 0xFF00897B.toInt(), 0xFF6D4C41.toInt(),
++    )
++
++    private val cache = HashMap<String, Bitmap>()
++
++    fun color(appId: String): Int =
++        COLORS[appId] ?: PALETTE[(appId.hashCode() and 0x7FFFFFFF) % PALETTE.size]
++
++    /** Monochromatyczna ikona na pasek powiadomień. */
++    fun small(appId: String, category: Int): Int = when {
++        appId == "com.apple.mobilephone" || appId == "com.apple.facetime" -> R.drawable.ic_call
++        appId == "com.apple.mobilemail" || appId == "com.google.Gmail" -> R.drawable.ic_mail
++        appId == "com.apple.mobilecal" -> R.drawable.ic_event
++        category == Ancs.CAT_INCOMING_CALL || category == Ancs.CAT_MISSED_CALL ||
++            category == Ancs.CAT_VOICEMAIL -> R.drawable.ic_call
++        category == Ancs.CAT_SOCIAL -> R.drawable.ic_chat
++        category == Ancs.CAT_EMAIL -> R.drawable.ic_mail
++        category == Ancs.CAT_SCHEDULE -> R.drawable.ic_event
++        appId == "com.apple.MobileSMS" -> R.drawable.ic_chat
++        else -> R.drawable.ic_bell
++    }
++
++    /** Kolorowa ikona (duża) – Twoja z res/drawable albo wygenerowana. */
++    fun bitmap(ctx: Context, appId: String, category: Int): Bitmap {
++        val key = "$appId|${small(appId, category)}"
++        cache[key]?.let { return it }
++        val bmp = custom(ctx, appId) ?: generated(ctx, appId, category)
++        cache[key] = bmp
++        return bmp
++    }
++
++    fun large(ctx: Context, appId: String, category: Int): Icon =
++        Icon.createWithBitmap(bitmap(ctx, appId, category))
++
++    @SuppressLint("DiscouragedApi")
++    private fun custom(ctx: Context, appId: String): Bitmap? {
++        if (appId.isEmpty()) return null
++        val name = "app_" + appId.lowercase().replace(Regex("[^a-z0-9_]"), "_")
++        val id = ctx.resources.getIdentifier(name, "drawable", ctx.packageName)
++        if (id == 0) return null
++        val d = ctx.getDrawable(id) ?: return null
++        val bmp = Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888)
++        val c = Canvas(bmp)
++        // przycięcie do koła, żeby pasowało do okrągłego UI Wear OS
++        val clip = Path().apply { addCircle(SIZE / 2f, SIZE / 2f, SIZE / 2f, Path.Direction.CW) }
++        c.clipPath(clip)
++        d.setBounds(0, 0, SIZE, SIZE)
++        d.draw(c)
++        return bmp
++    }
++
++    private fun generated(ctx: Context, appId: String, category: Int): Bitmap {
++        val bmp = Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888)
++        val c = Canvas(bmp)
++        val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = color(appId) }
++        c.drawCircle(SIZE / 2f, SIZE / 2f, SIZE / 2f, p)
++        val g = ctx.getDrawable(small(appId, category))?.mutate()
++        if (g != null) {
++            g.setTint(Color.WHITE)
++            val inset = SIZE / 4
++            g.setBounds(inset, inset, SIZE - inset, SIZE - inset)
++            g.draw(c)
++        }
++        return bmp
++    }
++}
+diff --git a/app/src/main/java/pl/etoo/watchbridge/CallActivity.kt b/app/src/main/java/pl/etoo/watchbridge/CallActivity.kt
+index 45c844d..d979eef 100644
+--- a/app/src/main/java/pl/etoo/watchbridge/CallActivity.kt
++++ b/app/src/main/java/pl/etoo/watchbridge/CallActivity.kt
+@@ -12,6 +12,7 @@ import android.os.Looper
+ import android.text.TextUtils
+ import android.view.Gravity
+ import android.view.WindowManager
++import android.widget.ImageView
+ import android.widget.LinearLayout
+ import android.widget.TextView
+ import java.lang.ref.WeakReference
+@@ -23,18 +24,23 @@ class CallActivity : Activity() {
+         private const val EXTRA_UID = "uid"
+         private const val EXTRA_NAME = "name"
+         private const val EXTRA_APP = "app"
++        private const val EXTRA_APP_ID = "app_id"
+         private const val EXTRA_POS = "pos"
+         private const val EXTRA_NEG = "neg"
+ 
+         private var current: WeakReference<CallActivity>? = null
+         private val main = Handler(Looper.getMainLooper())
+ 
+-        fun intent(ctx: Context, uid: Int, name: String, app: String, pos: Boolean, neg: Boolean): Intent =
++        fun intent(
++            ctx: Context, uid: Int, name: String, app: String, appId: String,
++            pos: Boolean, neg: Boolean,
++        ): Intent =
+             Intent(ctx, CallActivity::class.java)
+                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                 .putExtra(EXTRA_UID, uid)
+                 .putExtra(EXTRA_NAME, name)
+                 .putExtra(EXTRA_APP, app)
++                .putExtra(EXTRA_APP_ID, appId)
+                 .putExtra(EXTRA_POS, pos)
+                 .putExtra(EXTRA_NEG, neg)
+ 
+@@ -80,6 +86,12 @@ class CallActivity : Activity() {
+             val p = (24 * dp).toInt()
+             setPadding(p, p, p, p)
+         }
++        val appId = i.getStringExtra(EXTRA_APP_ID).orEmpty()
++        root.addView(ImageView(this).apply {
++            setImageBitmap(AppIcons.bitmap(this@CallActivity, appId, Ancs.CAT_INCOMING_CALL))
++            val s = (40 * dp).toInt()
++            layoutParams = LinearLayout.LayoutParams(s, s).apply { bottomMargin = (4 * dp).toInt() }
++        })
+         root.addView(TextView(this).apply {
+             text = i.getStringExtra(EXTRA_APP).orEmpty()
+             textSize = 14f
+diff --git a/app/src/main/java/pl/etoo/watchbridge/Notifier.kt b/app/src/main/java/pl/etoo/watchbridge/Notifier.kt
+index 014da99..996ab12 100644
+--- a/app/src/main/java/pl/etoo/watchbridge/Notifier.kt
++++ b/app/src/main/java/pl/etoo/watchbridge/Notifier.kt
+@@ -60,15 +60,18 @@ object Notifier {
+         val msg = a[Ancs.ATTR_MESSAGE]
+         val pos = a[Ancs.ATTR_POSITIVE_LABEL]
+         val neg = a[Ancs.ATTR_NEGATIVE_LABEL]
++        val appId = a[Ancs.ATTR_APP_ID]
+ 
+         if (ev.category == Ancs.CAT_INCOMING_CALL) {
+-            showCall(ctx, ev, app, title.ifBlank { "Nieznany numer" }, pos, neg)
++            showCall(ctx, ev, app, appId, title.ifBlank { "Nieznany numer" }, pos, neg)
+             return
+         }
+ 
+         val text = listOf(sub, msg).filter { it.isNotBlank() }.joinToString("\n")
+         val b = Notification.Builder(ctx, if (ev.silent) CH_QUIET else CH_MSG)
+-            .setSmallIcon(R.drawable.ic_notif)
++            .setSmallIcon(AppIcons.small(appId, ev.category))
++            .setLargeIcon(AppIcons.large(ctx, appId, ev.category))
++            .setColor(AppIcons.color(appId))
+             .setContentTitle(title.ifBlank { app })
+             .setContentText(text)
+             .setStyle(Notification.BigTextStyle().bigText(text))
+@@ -87,13 +90,18 @@ object Notifier {
+         nm(ctx).notify(NTAG, ev.uid, b.build())
+     }
+ 
+-    private fun showCall(ctx: Context, ev: SourceEvent, app: String, caller: String, pos: String, neg: String) {
+-        val full = CallActivity.intent(ctx, ev.uid, caller, app, ev.hasPositive, ev.hasNegative)
++    private fun showCall(
++        ctx: Context, ev: SourceEvent, app: String, appId: String,
++        caller: String, pos: String, neg: String,
++    ) {
++        val full = CallActivity.intent(ctx, ev.uid, caller, app, appId, ev.hasPositive, ev.hasNegative)
+         val fullPi = PendingIntent.getActivity(
+             ctx, ev.uid, full, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+         )
+         val b = Notification.Builder(ctx, CH_CALL)
+-            .setSmallIcon(R.drawable.ic_notif)
++            .setSmallIcon(R.drawable.ic_call)
++            .setLargeIcon(AppIcons.large(ctx, appId, Ancs.CAT_INCOMING_CALL))
++            .setColor(AppIcons.color(appId))
+             .setContentTitle(caller)
+             .setContentText("$app – połączenie przychodzące")
+             .setCategory(Notification.CATEGORY_CALL)
+diff --git a/app/src/main/res/drawable/ic_bell.xml b/app/src/main/res/drawable/ic_bell.xml
+new file mode 100644
+index 0000000..d1ba65a
+--- /dev/null
++++ b/app/src/main/res/drawable/ic_bell.xml
+@@ -0,0 +1,6 @@
++<?xml version="1.0" encoding="utf-8"?>
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="24dp" android:height="24dp"
++    android:viewportWidth="24" android:viewportHeight="24">
++    <path android:fillColor="#FFFFFFFF" android:pathData="M12,22c1.1,0 2,-0.9 2,-2h-4c0,1.1 0.9,2 2,2zM18,16v-5c0,-3.07 -1.64,-5.64 -4.5,-6.32V4c0,-0.83 -0.67,-1.5 -1.5,-1.5s-1.5,0.67 -1.5,1.5v0.68C7.63,5.36 6,7.92 6,11v5l-2,2v1h16v-1l-2,-2z" />
++</vector>
+diff --git a/app/src/main/res/drawable/ic_call.xml b/app/src/main/res/drawable/ic_call.xml
+new file mode 100644
+index 0000000..d7bf81d
+--- /dev/null
++++ b/app/src/main/res/drawable/ic_call.xml
+@@ -0,0 +1,6 @@
++<?xml version="1.0" encoding="utf-8"?>
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="24dp" android:height="24dp"
++    android:viewportWidth="24" android:viewportHeight="24">
++    <path android:fillColor="#FFFFFFFF" android:pathData="M6.62,10.79c1.44,2.83 3.76,5.14 6.59,6.59l2.2,-2.2c0.27,-0.27 0.67,-0.36 1.02,-0.24 1.12,0.37 2.33,0.57 3.57,0.57 0.55,0 1,0.45 1,1V20c0,0.55 -0.45,1 -1,1 -9.39,0 -17,-7.61 -17,-17 0,-0.55 0.45,-1 1,-1h3.5c0.55,0 1,0.45 1,1 0,1.25 0.2,2.45 0.57,3.57 0.11,0.35 0.03,0.74 -0.25,1.02l-2.2,2.2z" />
++</vector>
+diff --git a/app/src/main/res/drawable/ic_chat.xml b/app/src/main/res/drawable/ic_chat.xml
+new file mode 100644
+index 0000000..67d5213
+--- /dev/null
++++ b/app/src/main/res/drawable/ic_chat.xml
+@@ -0,0 +1,6 @@
++<?xml version="1.0" encoding="utf-8"?>
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="24dp" android:height="24dp"
++    android:viewportWidth="24" android:viewportHeight="24">
++    <path android:fillColor="#FFFFFFFF" android:pathData="M4,3h16a2,2 0,0 1,2 2v11a2,2 0,0 1,-2 2h-10l-5,4v-4h-1a2,2 0,0 1,-2 -2v-11a2,2 0,0 1,2 -2zM7,8v2h10v-2zM7,12v2h7v-2z" />
++</vector>
+diff --git a/app/src/main/res/drawable/ic_event.xml b/app/src/main/res/drawable/ic_event.xml
+new file mode 100644
+index 0000000..4142f90
+--- /dev/null
++++ b/app/src/main/res/drawable/ic_event.xml
+@@ -0,0 +1,6 @@
++<?xml version="1.0" encoding="utf-8"?>
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="24dp" android:height="24dp"
++    android:viewportWidth="24" android:viewportHeight="24">
++    <path android:fillColor="#FFFFFFFF" android:pathData="M19,4h-1V2h-2v2H8V2H6v2H5c-1.11,0 -2,0.9 -2,2v14c0,1.1 0.89,2 2,2h14c1.1,0 2,-0.9 2,-2V6c0,-1.1 -0.9,-2 -2,-2zM19,20H5V9h14v11z" />
++</vector>
+diff --git a/app/src/main/res/drawable/ic_mail.xml b/app/src/main/res/drawable/ic_mail.xml
+new file mode 100644
+index 0000000..987b24a
+--- /dev/null
++++ b/app/src/main/res/drawable/ic_mail.xml
+@@ -0,0 +1,6 @@
++<?xml version="1.0" encoding="utf-8"?>
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="24dp" android:height="24dp"
++    android:viewportWidth="24" android:viewportHeight="24">
++    <path android:fillColor="#FFFFFFFF" android:pathData="M20,4H4c-1.1,0 -2,0.9 -2,2v12c0,1.1 0.9,2 2,2h16c1.1,0 2,-0.9 2,-2V6c0,-1.1 -0.9,-2 -2,-2zM20,8l-8,5 -8,-5V6l8,5 8,-5v2z" />
++</vector>
