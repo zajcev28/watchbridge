@@ -12,6 +12,7 @@ import android.os.Looper
 import android.text.TextUtils
 import android.view.Gravity
 import android.view.WindowManager
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import java.lang.ref.WeakReference
@@ -23,18 +24,23 @@ class CallActivity : Activity() {
         private const val EXTRA_UID = "uid"
         private const val EXTRA_NAME = "name"
         private const val EXTRA_APP = "app"
+        private const val EXTRA_APP_ID = "app_id"
         private const val EXTRA_POS = "pos"
         private const val EXTRA_NEG = "neg"
 
         private var current: WeakReference<CallActivity>? = null
         private val main = Handler(Looper.getMainLooper())
 
-        fun intent(ctx: Context, uid: Int, name: String, app: String, pos: Boolean, neg: Boolean): Intent =
+        fun intent(
+            ctx: Context, uid: Int, name: String, app: String, appId: String,
+            pos: Boolean, neg: Boolean,
+        ): Intent =
             Intent(ctx, CallActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 .putExtra(EXTRA_UID, uid)
                 .putExtra(EXTRA_NAME, name)
                 .putExtra(EXTRA_APP, app)
+                .putExtra(EXTRA_APP_ID, appId)
                 .putExtra(EXTRA_POS, pos)
                 .putExtra(EXTRA_NEG, neg)
 
@@ -80,6 +86,12 @@ class CallActivity : Activity() {
             val p = (24 * dp).toInt()
             setPadding(p, p, p, p)
         }
+        val appId = i.getStringExtra(EXTRA_APP_ID).orEmpty()
+        root.addView(ImageView(this).apply {
+            setImageBitmap(AppIcons.bitmap(this@CallActivity, appId, Ancs.CAT_INCOMING_CALL))
+            val s = (40 * dp).toInt()
+            layoutParams = LinearLayout.LayoutParams(s, s).apply { bottomMargin = (4 * dp).toInt() }
+        })
         root.addView(TextView(this).apply {
             text = i.getStringExtra(EXTRA_APP).orEmpty()
             textSize = 14f

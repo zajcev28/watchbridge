@@ -76,3 +76,25 @@ adb logcat -s WatchBridge
 - Przy „Odbierz” rozmowa i tak idzie przez iPhone'a, bo zegarek nie ma profilu HFP do iOS.
 - W trybie oszczędzania energii OnePlusa (sam RTOS) Wear OS śpi, więc powiadomień nie będzie.
 - Stare powiadomienia, które były już na iPhonie w chwili połączenia, są pomijane.
+
+## Ikony aplikacji
+
+ANCS nie przesyła obrazków, więc ikony siedzą w samej aplikacji na zegarku. Domyślnie każda
+aplikacja z iPhone'a dostaje kolorowe kółko z symbolem kategorii (czat, telefon, mail, kalendarz, dzwonek).
+
+Własną ikonę dodasz tak: wrzuć PNG (np. 128×128) do `app/src/main/res/drawable/` pod nazwą
+`app_` + bundle ID z małych liter, a kropki zamień na `_`:
+
+| Aplikacja | Nazwa pliku |
+|---|---|
+| WhatsApp | `app_net_whatsapp_whatsapp.png` |
+| WhatsApp Business | `app_net_whatsapp_whatsappsmb.png` |
+| Wiadomości (SMS) | `app_com_apple_mobilesms.png` |
+| Telefon | `app_com_apple_mobilephone.png` |
+| Messenger | `app_com_facebook_messenger.png` |
+| Telegram | `app_ph_telegra_telegraph.png` |
+| Signal | `app_org_whispersystems_signal.png` |
+| Gmail | `app_com_google_gmail.png` |
+
+Bundle ID innych aplikacji znajdziesz w logu: `adb logcat -s WatchBridge`.
+Po dodaniu pliku: commit → push → nowe APK z Actions → `adb install -r`.

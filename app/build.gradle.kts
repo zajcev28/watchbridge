@@ -11,8 +11,8 @@ android {
         applicationId = "pl.etoo.watchbridge"
         minSdk = 33          // Wear OS 4+ (OnePlus Watch 4 ma Wear OS 6)
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1"
+        versionCode = 2
+        versionName = "0.2"
     }
 
     buildTypes {

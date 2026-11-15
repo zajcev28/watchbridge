@@ -60,15 +60,18 @@ object Notifier {
         val msg = a[Ancs.ATTR_MESSAGE]
         val pos = a[Ancs.ATTR_POSITIVE_LABEL]
         val neg = a[Ancs.ATTR_NEGATIVE_LABEL]
+        val appId = a[Ancs.ATTR_APP_ID]
 
         if (ev.category == Ancs.CAT_INCOMING_CALL) {
-            showCall(ctx, ev, app, title.ifBlank { "Nieznany numer" }, pos, neg)
+            showCall(ctx, ev, app, appId, title.ifBlank { "Nieznany numer" }, pos, neg)
             return
         }
 
         val text = listOf(sub, msg).filter { it.isNotBlank() }.joinToString("\n")
         val b = Notification.Builder(ctx, if (ev.silent) CH_QUIET else CH_MSG)
-            .setSmallIcon(R.drawable.ic_notif)
+            .setSmallIcon(AppIcons.small(appId, ev.category))
+            .setLargeIcon(AppIcons.large(ctx, appId, ev.category))
+            .setColor(AppIcons.color(appId))
             .setContentTitle(title.ifBlank { app })
             .setContentText(text)
             .setStyle(Notification.BigTextStyle().bigText(text))
@@ -87,13 +90,18 @@ object Notifier {
         nm(ctx).notify(NTAG, ev.uid, b.build())
     }
 
-    private fun showCall(ctx: Context, ev: SourceEvent, app: String, caller: String, pos: String, neg: String) {
-        val full = CallActivity.intent(ctx, ev.uid, caller, app, ev.hasPositive, ev.hasNegative)
+    private fun showCall(
+        ctx: Context, ev: SourceEvent, app: String, appId: String,
+        caller: String, pos: String, neg: String,
+    ) {
+        val full = CallActivity.intent(ctx, ev.uid, caller, app, appId, ev.hasPositive, ev.hasNegative)
         val fullPi = PendingIntent.getActivity(
             ctx, ev.uid, full, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val b = Notification.Builder(ctx, CH_CALL)
-            .setSmallIcon(R.drawable.ic_notif)
+            .setSmallIcon(R.drawable.ic_call)
+            .setLargeIcon(AppIcons.large(ctx, appId, Ancs.CAT_INCOMING_CALL))
+            .setColor(AppIcons.color(appId))
             .setContentTitle(caller)
             .setContentText("$app – połączenie przychodzące")
             .setCategory(Notification.CATEGORY_CALL)
